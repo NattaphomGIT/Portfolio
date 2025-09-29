@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>My 3D Portfolio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; font-family: "Segoe UI", Tahoma, sans-serif; background: #05060a; }
+    canvas { display: block; }
+
+    #infoBox {
+      position: absolute; top: 70px; left: 20px; padding: 16px;
+      background: rgba(0,0,0,0.7); color: #fff; border-radius: 12px;
+      max-width: 280px; display: none; transition: all 0.5s ease;
+    }
+    #infoBox h2 { margin: 0 0 8px; font-size: 18px; color: #00ffd5; }
+    #infoBox img { width: 100%; border-radius: 8px; margin-bottom: 8px; }
+
+    .ui { position: absolute; z-index: 10; color: #e6eef8; pointer-events: none; }
+    #topBar { top: 18px; left: 18px; right: 18px; display:flex; justify-content:space-between; align-items:center; pointer-events:auto; }
+    .brand { display:flex; gap:12px; align-items:center; }
+    .brand .logo { width:48px; height:48px; border-radius:12px; background:linear-gradient(135deg,#ff7a7a,#a84eff); display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .brand .title { font-weight:600; font-size:16px; }
+
+    .menu { display:flex; gap:10px; }
+    .btn {
+      background: rgba(255,255,255,0.06); border-radius:10px;
+      padding:8px 12px; font-size:13px; color:inherit;
+      border:1px solid rgba(255,255,255,0.04); cursor:pointer;
+      pointer-events:auto; backdrop-filter: blur(6px);
+    }
+
+    #hint { position: absolute; left:50%; transform:translateX(-50%); bottom:18px; }
+    #hint .chip { background: rgba(255,255,255,0.04); padding:8px 14px; border-radius:20px; font-size:13px; }
+
+    #modal {
+      position: fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,0.6); z-index:20;
+    }
+    #modal .card {
+      width: min(600px, 96%); background:#101522; border-radius:12px;
+      padding:18px; color:#fff; max-height:80vh; overflow:auto;
+      box-shadow:0 20px 60px rgba(0,0,0,0.7);
+    }
+    #modal .close {
+      position:absolute; top:20px; right:20px;
+      background:#333; color:#fff; border:none; border-radius:8px;
+      padding:6px 10px; cursor:pointer;
+    }
+
+    /* pointer cursor when hovering canvas UI elements */
+    canvas { cursor: grab; }
+    .btn:active { transform: translateY(1px); }
+  </style>
+
+  <!-- Three.js core + controls + GLTFLoader (จำเป็นต้องใช้ examples loaders) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+
+<body>
+  <div id="infoBox"></div>
+
+  <div id="topBar" class="ui">
+    <div class="brand">
+      <div class="logo">N</div>
+      <div class="title">Nattaphom — 3D Portfolio</div>
+    </div>
+    <div class="menu">
+      <button class="btn" id="autoDemoBtn">Auto Demo ▶</button>
+      <button class="btn" id="resumeBtn">Resume</button>
+      <button class="btn" id="contactBtn">Contact</button>
+    </div>
+  </div>
+
+  <div id="hint" class="ui"><div class="chip">คลิกวัตถุเพื่อดูรายละเอียด • Auto Demo เพื่อทัวร์อัตโนมัติ</div></div>
+
+  <div id="modal"><div class="card"><button class="close">✖</button><div id="modalContent"></div></div></div>
+
+  <script>
+    (() => {
+      // -----------------------
+      // Scene / Camera / Renderer
+      // -----------------------
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 100);
+      camera.position.set(0, 1.5, 5);
+
+      const renderer = new THREE.WebGLRenderer({antialias:true});
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      document.body.appendChild(renderer.domElement);
+
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.target.set(0,0.5,0);
+      controls.enableDamping = true;
+
+      scene.add(new THREE.AmbientLight(0xffffff,0.8));
+      const light = new THREE.PointLight(0xffffff,1.2);
+      light.position.set(2,3,4);
+      scene.add(light);
+      scene.add(new THREE.GridHelper(10,10,0x666666,0x333333));
+
+      // -----------------------
+      // Loaders
+      // -----------------------
+      const gltfLoader = new THREE.GLTFLoader();
+
+      // -----------------------
+      // Clickable list & helpers
+      // -----------------------
+      const clickable = [];
+
+      // Utility: find ancestor with meaningful name
+      function findNamedAncestor(obj){
+        let cur = obj;
+        while(cur){
+          if(cur.name && cur.name !== "") return cur;
+          cur = cur.parent;
+        }
+        return null;
+      }
+
+      // -----------------------
+      // Optional: Load a GLB model (if you have Name.glb)
+      // -----------------------
+      gltfLoader.load('Name.glb',
+        function (gltf) {
+          const model = gltf.scene;
+          model.position.set(1, 0, 2);
+          model.scale.set(1, 1, 1);
+          model.name = "Model";
+          //model.userData.info = { title: "3D Model", desc: "โมเดลตัวอย่าง", img: "https://via.placeholder.com/250x150.png?text=Model" };
+          scene.add(model);
+          clickable.push(model);
+        },
+        undefined,
+        function (error) {
+          // ถ้าไม่มีไฟล์ก็ไม่ต้องสนใจ แค่ log
+          console.warn('GLB load error (ignored):', error);
+        }
+      );
+
+      // -----------------------
+      // Profile Cube (group of small cubes)
+      // -----------------------
+      const profileGroup = new THREE.Group();
+      const smallCubes = [];
+      for (let x=-0.4;x<=0.4;x+=0.4){
+        for (let y=-0.4;y<=0.4;y+=0.4){
+          for (let z=-0.4;z<=0.4;z+=0.4){
+            const cube = new THREE.Mesh(
+              new THREE.BoxGeometry(0.35,0.35,0.35),
+              new THREE.MeshStandardMaterial({roughness:0.5, metalness:0.1, color:0xff6b6b})
+            );
+            cube.position.set(x,y,z);
+            // store original position in world-space relative to profileGroup after adding
+            profileGroup.add(cube);
+            smallCubes.push(cube);
+          }
+        }
+      }
+      profileGroup.position.set(-2,0.4,0);
+      profileGroup.name="Profile";
+      profileGroup.userData.info={title:"สวัสดีครับ 👋",desc:"ผมเป็นโปรแกรมเมอร์จบใหม่\nสนใจด้าน Web & 3D Development",img:"https://via.placeholder.com/250x150.png?text=Profile"};
+      scene.add(profileGroup);
+      clickable.push(profileGroup);
+
+      // store each cube's original local position and physics data
+      smallCubes.forEach(c => {
+        c.userData.originalPos = c.position.clone();
+        c.userData.targetPos = c.position.clone();
+        c.userData.velocity = new THREE.Vector3(0,0,0);
+        c.userData.isShattered = false;
+      });
+
+      // -----------------------
+      // Skill Sphere
+      // -----------------------
+      const skill = new THREE.Mesh(new THREE.SphereGeometry(0.5,32,16),
+                                   new THREE.MeshStandardMaterial({roughness:0.5, metalness:0.1, color:0x5dff9b}));
+      skill.position.set(0,0.5,0); skill.name="Skill";
+      skill.userData.info={title:"ทักษะของผม",desc:"💻 JavaScript, Python, COBOL\n🎨 Three.js, React, Tailwind",img:"https://via.placeholder.com/250x150.png?text=Skills"};
+      scene.add(skill); clickable.push(skill);
+
+      // -----------------------
+      // Project Cone
+      // -----------------------
+      const project=new THREE.Mesh(new THREE.ConeGeometry(0.5,1,24),new THREE.MeshStandardMaterial({roughness:0.5, metalness:0.1, color:0x5db6ff}));
+      project.position.set(2,0.5,0); project.name="Project";
+      project.userData.info={title:"Projects",desc:"• Mini Stock Management\n• ATM System\n• 3D Portfolio",img:"https://via.placeholder.com/250x150.png?text=Projects"};
+      scene.add(project); clickable.push(project);
+
+      // -----------------------
+      // Contact Cylinder
+      // -----------------------
+      const contact=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,1,24),new THREE.MeshStandardMaterial({roughness:0.5, metalness:0.1, color:0xffff6b}));
+      contact.position.set(0,0.5,-2); contact.name="Contact";
+      contact.userData.info={title:"ติดต่อผม",desc:"📧 email@example.com\n📱 081-234-5678",img:"https://via.placeholder.com/250x150.png?text=Contact"};
+      scene.add(contact); clickable.push(contact);
+
+      // -----------------------
+      // Camera "views" for Auto Demo
+      // -----------------------
+      const VIEWS = {
+        Profile:{pos:new THREE.Vector3(-3,1.6,2), tar:new THREE.Vector3(-2,0.4,0)},
+        Skill:{pos:new THREE.Vector3(0,1.8,3), tar:new THREE.Vector3(0,0.5,0)},
+        Project:{pos:new THREE.Vector3(3,1.6,-2), tar:new THREE.Vector3(2,0.5,0)},
+        Contact:{pos:new THREE.Vector3(0,3.5,3), tar:new THREE.Vector3(0,0.5,-2)},
+        Model:{pos:new THREE.Vector3(2,2,5), tar:new THREE.Vector3(1,0,2)}
+      };
+
+      // -----------------------
+      // InfoBox & Raycaster
+      // -----------------------
+      const infoBox = document.getElementById("infoBox");
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+
+      function setPointer(e){
+        const r = renderer.domElement.getBoundingClientRect();
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if(e.touches && e.touches[0]) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+        pointer.x = ((clientX - r.left) / r.width) * 2 - 1;
+        pointer.y = -((clientY - r.top) / r.height) * 2 + 1;
+      }
+
+      function showInfo(obj){
+        if(!obj || !obj.userData || !obj.userData.info) return;
+        const d = obj.userData.info;
+        infoBox.innerHTML = `<h2>${d.title}</h2><img src="${d.img}"><p>${d.desc.replace(/\n/g,"<br>")}</p>`;
+        infoBox.style.display = "block";
+      }
+
+      function openModal(html){ modalContent.innerHTML = html; modal.style.display = "flex"; }
+
+      function onPick(e){
+        setPointer(e);
+        raycaster.setFromCamera(pointer,camera);
+        const hits = raycaster.intersectObjects(clickable, true);
+        if(!hits || hits.length === 0) return;
+        const hit = hits[0];
+        const named = findNamedAncestor(hit.object);
+        if(!named) return;
+
+        // determine root object (Profile is a group)
+        const root = named;
+        if(!VIEWS[root.name]) {
+          // if not in VIEWS, try parent's name
+          const parentNamed = findNamedAncestor(root.parent);
+          if(parentNamed && VIEWS[parentNamed.name]) {
+            activeView = { pos: VIEWS[parentNamed.name].pos.clone(), tar: VIEWS[parentNamed.name].tar.clone() };
+            showInfo(parentNamed);
+            if(parentNamed.name === "Project") openModal("<h2>Projects</h2><p>Mini Stock, ATM, 3D Portfolio</p>");
+            if(parentNamed.name === "Contact") openModal("<h2>Contact</h2><p>Email: email@example.com<br>Tel: 081-234-5678</p>");
+            return;
+          }
+          return;
+        }
+
+        activeView = { pos: VIEWS[root.name].pos.clone(), tar: VIEWS[root.name].tar.clone() };
+        showInfo(root);
+        if(root.name === "Project") openModal("<h2>Projects</h2><p>Mini Stock, ATM, 3D Portfolio</p>");
+        if(root.name === "Contact") openModal("<h2>Contact</h2><p>Email: email@example.com<br>Tel: 081-234-5678</p>");
+      }
+
+      renderer.domElement.addEventListener("click", onPick);
+      renderer.domElement.addEventListener("touchstart", (e)=>{ onPick(e); });
+
+      // -----------------------
+      // Explode / Physics for profile cubes
+      // -----------------------
+      let gravity = -9.8; // m/s^2 (conceptual)
+      let isExploded = false;
+
+      function explodeProfile_Physics(){
+        // initial impulse: upward + radial
+        smallCubes.forEach(c => {
+          // set world-space direction from group center outward
+          const local = c.position.clone();
+          const radial = local.clone().normalize();
+          // random upward impulse
+          const upImpulse = 2.0 + Math.random() * 1.2;
+          const spread = 1.5 + Math.random() * 1.0;
+          c.userData.velocity = new THREE.Vector3(
+            radial.x * spread * (0.3 + Math.random()*0.7),
+            upImpulse,
+            radial.z * spread * (0.3 + Math.random()*0.7)
+          );
+          c.userData.isShattered = false;
+        });
+        isExploded = true;
+      }
+
+      function resetProfile_Physics(){
+        // Reset to original local positions and zero velocities
+        smallCubes.forEach(c => {
+          c.userData.velocity.set(0,0,0);
+          c.userData.targetPos = c.userData.originalPos.clone();
+          c.userData.isShattered = false;
+        });
+        isExploded = false;
+      }
+
+      // We'll simulate simple physics in the loop: apply velocity, gravity, and when a cube falls below a threshold, scatter a bit
+      const groundY = -0.8; // threshold relative to profileGroup y-world (profileGroup.position.y is 0.4)
+      function updateProfilePhysics(dt){
+        if(!isExploded) {
+          // gently lerp back to target pos if not exploded
+          smallCubes.forEach(c => {
+            c.position.lerp(c.userData.targetPos, 0.08);
+            // small rotation when idle
+            c.rotation.x += dt * 0.2;
+            c.rotation.y += dt * 0.25;
+          });
+          return;
+        }
+        // exploded: integrate velocities
+        smallCubes.forEach(c => {
+          // integrate velocity (simple)
+          c.userData.velocity.y += gravity * dt * 0.3; // scale gravity smaller for aesthetic
+          c.position.addScaledVector(c.userData.velocity, dt);
+
+          // rotate as it moves
+          c.rotation.x += c.userData.velocity.x * dt * 0.6;
+          c.rotation.y += c.userData.velocity.z * dt * 0.6;
+
+          // check if below an impact threshold (world-space)
+          const worldPos = c.getWorldPosition(new THREE.Vector3());
+          const impactWorldY = profileGroup.position.y + groundY;
+          if(worldPos.y <= impactWorldY && !c.userData.isShattered) {
+            // mark as "shattered" and apply a burst outward on impact
+            c.userData.isShattered = true;
+            // small random burst
+            c.userData.velocity.x = (Math.random() - 0.5) * 4;
+            c.userData.velocity.y = -0.2 + Math.random() * 1.0; // small bounce
+            c.userData.velocity.z = (Math.random() - 0.5) * 4;
+            // optionally scale down to look like fragments
+            c.scale.set(0.9,0.9,0.9);
+          }
+        });
+      }
+
+      // -----------------------
+      // Auto Demo (tour)
+      // -----------------------
+      let isAutoDemo = false, demoIndex = -1, demoTimer = null;
+      const demoOrder = ["Profile","Skill","Project","Contact","Model"];
+
+      function nextDemo(){
+        demoIndex = (demoIndex + 1) % demoOrder.length;
+        const name = demoOrder[demoIndex];
+        const obj = scene.getObjectByName(name);
+        if(obj && VIEWS[name]) {
+          activeView = { pos: VIEWS[name].pos.clone(), tar: VIEWS[name].tar.clone() };
+          // show info for object if exists
+          if(obj.userData && obj.userData.info) showInfo(obj);
+          // open modal for Project/Contact immediately
+          if(name === "Project") openModal("<h2>Projects</h2><p>Mini Stock, ATM, 3D Portfolio</p>");
+          if(name === "Contact") openModal("<h2>Contact</h2><p>📧 email@example.com<br>📱 081-234-5678</p>");
+        }
+      }
+
+      function startAutoDemo(){
+        if(isAutoDemo) return;
+        isAutoDemo = true;
+        document.getElementById("autoDemoBtn").innerText = "Auto Demo ⏸";
+        // explode physics effect:
+        explodeProfile_Physics();
+        // start demo sequence
+        demoIndex = -1;
+        nextDemo(); // show first immediately
+        demoTimer = setInterval(()=>{ nextDemo(); }, 3800);
+      }
+
+      function stopAutoDemo(){
+        if(!isAutoDemo) return;
+        isAutoDemo = false;
+        document.getElementById("autoDemoBtn").innerText = "Auto Demo ▶";
+        clearInterval(demoTimer);
+        demoTimer = null;
+        // reset profile cubes to original
+        resetProfile_Physics();
+        // hide info box and modal
+        infoBox.style.display = "none";
+        modal.style.display = "none";
+      }
+
+      document.getElementById("autoDemoBtn").addEventListener("click", ()=>{ if(isAutoDemo) stopAutoDemo(); else startAutoDemo(); });
+
+      // -----------------------
+      // Resume & Contact
+      // -----------------------
+      document.getElementById("resumeBtn").addEventListener("click", ()=>{ window.open("resume.pdf","_blank"); });
+      document.getElementById("contactBtn").addEventListener("click", ()=>{ openModal("<h2>Contact Me</h2><p>📧 email@example.com<br>📱 081-234-5678</p>"); });
+
+      // -----------------------
+      // Modal
+      // -----------------------
+      const modal = document.getElementById("modal"), modalContent = document.getElementById("modalContent");
+      modal.querySelector(".close").onclick = ()=> modal.style.display = "none";
+
+      // -----------------------
+      // Resize handler
+      // -----------------------
+      addEventListener("resize", ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+      // -----------------------
+      // Animation loop
+      // -----------------------
+      const clock = new THREE.Clock();
+      let activeView = null;
+      function loop(){
+        const dt = clock.getDelta();
+
+        // rotate non-profile objects slowly for liveliness
+        clickable.forEach(o => {
+          if(o !== profileGroup && o.name !== "Model") {
+            o.rotation.y += dt * 0.6;
+          }
+        });
+
+        // update profile cube physics / positions
+        updateProfilePhysics(dt);
+
+        // Smooth camera moves when activeView set
+        if(activeView){
+          camera.position.lerp(activeView.pos, 0.06);
+          controls.target.lerp(activeView.tar, 0.06);
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+      loop();
+
+      // initial small animation: slightly show profile info after load
+      setTimeout(()=>{ showInfo(profileGroup); setTimeout(()=>{ infoBox.style.display="none"; }, 1800); }, 900);
+
+    })();
+  </script>
+</body>
+</html>
