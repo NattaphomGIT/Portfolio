@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Screen with GUI</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #ui {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(20,20,20,0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/EXRLoader.js"></script>
+
+  <script>
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // Scene + Camera
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+
+    //camera.position.set(0, 1.5, 4);
+    camera.position.set(7, 5, 0);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 3, 0);
+    controls.update();
+
+    // === Custom Camera Move ===
+    let activeView=null;
+    function moveCameraTo(x, y, z, tx, ty, tz) {
+      // ตั้งค่าปลายทางใหม่
+      activeView = {
+        pos: new THREE.Vector3(x, y, z),
+        tar: new THREE.Vector3(tx, ty, tz)
+      };
+    }
+
+
+    // Light
+    /*
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 10, 0);
+    dirLight.castShadow = true;
+    scene.add(dirLight);*/
+ // แสงรวมอ่อน ๆ เพื่อไม่ให้ฉากมืดสนิท
+scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+/*
+const spotLight = new THREE.SpotLight(0xffffff, 2.5);
+  spotLight.position.set(3, 8, 0);      // อยู่เหนือฉาก (y=8)
+  spotLight.angle = Math.PI / 8;        // มุมลำแสง (ยิ่งเล็กยิ่งแคบ)
+  spotLight.penumbra = 0.4;             // ขอบแสงนุ่มนวล (0-1)
+  spotLight.decay = 2;                  // ลดความเข้มตามระยะ
+  spotLight.distance = 30;              // ระยะที่แสงมีผล
+
+  // ✅ เปิดเงา
+  spotLight.castShadow = true;
+  spotLight.shadow.mapSize.width = 2048;
+  spotLight.shadow.mapSize.height = 2048;
+  spotLight.shadow.bias = -0.0001;
+
+  // ✅ ตั้งให้ส่องไปที่จุดกลาง (0,0,0)
+  spotLight.target.position.set(0, 0, 0);
+
+  scene.add(spotLight.target);
+  scene.add(spotLight);*/
+let spotLight_array = {}
+
+function addSpotLight(name, x,y,z, x1,y1,z1){
+  // ✅ สปอร์ตไลต์ฉายลงกลางฉาก
+  const spotLight = new THREE.SpotLight(0xffffff, 2.5);
+  spotLight.position.set(x,y,z);      // อยู่เหนือฉาก (y=8)
+  spotLight.angle = Math.PI / 8;        // มุมลำแสง (ยิ่งเล็กยิ่งแคบ)
+  spotLight.penumbra = 0.4;             // ขอบแสงนุ่มนวล (0-1)
+  spotLight.decay = 2;                  // ลดความเข้มตามระยะ
+  spotLight.distance = 30;              // ระยะที่แสงมีผล
+
+  // ✅ เปิดเงา
+  spotLight.castShadow = true;
+  spotLight.shadow.mapSize.width = 2048;
+  spotLight.shadow.mapSize.height = 2048;
+  spotLight.shadow.bias = -0.0001;
+
+  // ✅ ตั้งให้ส่องไปที่จุดกลาง (0,0,0)
+  spotLight.target.position.set(x1,y1,z1);
+  
+  spotLight_array[name] = spotLight;
+  scene.add(spotLight_array[name].target);
+  scene.add(spotLight_array[name]);
+}
+function flickerLight(light, duration = 1) {
+  const start = performance.now();
+
+  function animate(time) {
+    const elapsed = (time - start) / 1000;
+
+    if (elapsed < duration) {
+      // กระพริบแบบสุ่ม (0 ถึง 1)
+      light.intensity = (Math.random() > 0.5 ? 2.5 : 0.2) * (1 - elapsed / duration) + 2.5 * (elapsed / duration);
+
+      requestAnimationFrame(animate);
+    } else {
+      // ติดค้างค่าสุดท้าย
+      light.intensity = 3.5;
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+addSpotLight("spotLight1",3, 8, 0,0, 0, 0)
+addSpotLight("spotLight2",-3, 8, 0, -12, 4, 0)
+
+
+// (ถ้าอยากดูตำแหน่งลำแสง)
+/*const helper = new THREE.SpotLightHelper(spotLight);
+scene.add(helper);*/
+
+    // Ground
+    /*
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(50, 50),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,     // สีพื้นขาวสะท้อนแสงดีสุด
+        metalness: 0.9,      // ให้เหมือนพื้นโลหะ
+        roughness: 1,      // ทำให้เรียบและเงา
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);*/
+    // โหลด texture ทั้งหมด
+    const loader_texture = new THREE.TextureLoader();
+
+    const baseColor = loader_texture.load("Poliigon_TilesCeramicWhite_6956_BaseColor.jpg");
+    const displacement = loader_texture.load("Poliigon_TilesCeramicWhite_6956_Displacement.jpg");
+    const metallic = loader_texture.load("Poliigon_TilesCeramicWhite_6956_Metallic.jpg");
+    const normal = loader_texture.load("Poliigon_TilesCeramicWhite_6956_Normal.jpg");
+    const roughness = loader_texture.load("Poliigon_TilesCeramicWhite_6956_Roughness.jpg");
+
+    // ปรับ repeat ถ้าพื้นใหญ่กว่า texture
+    baseColor.wrapS = baseColor.wrapT = THREE.RepeatWrapping;
+    displacement.wrapS = displacement.wrapT = THREE.RepeatWrapping;
+    metallic.wrapS = metallic.wrapT = THREE.RepeatWrapping;
+    normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+    roughness.wrapS = roughness.wrapT = THREE.RepeatWrapping;
+
+    // (เช่น tile ซ้ำ 4x4)
+    baseColor.repeat.set(4, 4);
+    displacement.repeat.set(4, 4);
+    metallic.repeat.set(4, 4);
+    normal.repeat.set(4, 4);
+    roughness.repeat.set(4, 4);
+
+    // สร้าง material แบบ PBR
+    const groundMaterial = new THREE.MeshStandardMaterial({
+      map: baseColor,
+      displacementMap: displacement,
+      metalness: 1,
+      roughness: 0.5,
+      transparent: true,   // ทำให้เป็นวัตถุโปร่งใส (จัดเรียงการวาดถูกต้อง)
+      opacity: 1.0,        
+      transmission: 1,   // โปร่งใสแบบแก้ว (พึ่งพา env/background)
+      ior: 1.5,
+      thickness: 1.2,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+      envMapIntensity: 1.4
+    });
+
+    // สร้าง mesh
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(50, 50, 100, 100), // subdivision เยอะๆ สำหรับ displacement
+      groundMaterial
+    );
+
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+
+    // Environment (optional)
+    /*
+    const exrLoader = new THREE.EXRLoader();
+    exrLoader.load('cyclorama_hard_light_1k.exr', (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = texture;
+      scene.environment = texture;
+    });*/
+    // ===== Canvas GUI =====
+      const uiCanvas = document.createElement('canvas');
+      uiCanvas.width = 1250;
+      uiCanvas.height = 725;
+      const ctx = uiCanvas.getContext('2d', { alpha: false });
+      const uiTexture = new THREE.CanvasTexture(uiCanvas);
+      uiTexture.encoding = THREE.sRGBEncoding;
+      uiTexture.needsUpdate = true;
+
+      const clickable = [];
+
+      const button = { x: 150, y: 200, w: 230, h: 80 };
+      let showWelcome = false;
+      // ===== Plane 3D สำหรับ GUI =====
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.25, 0.725),
+        new THREE.MeshBasicMaterial({ map: uiTexture, side: THREE.DoubleSide })
+      );
+      plane.position.set(0.48, 1.23, 0);
+        plane.rotation.y = Math.PI / 2
+        ground.receiveShadow = true;
+      scene.add(plane);
+      clickable.push(plane);
+
+      function updateUI_Srceen_1() {
+        // พื้นหลังแดง
+        ctx.fillStyle = '#00ad00';
+        ctx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
+
+        // ปุ่ม
+        ctx.fillStyle = '#333';
+        ctx.fillRect(button.x, button.y, button.w, button.h);
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(button.x, button.y, button.w, button.h);
+        ctx.fillStyle = '#0f0';
+        ctx.font = '30px Arial';
+        ctx.fillText('About ME :)', button.x + 40, button.y + 50);
+
+        // ข้อความ Welcome
+        /*
+        if (showWelcome) {
+          ctx.fillStyle = '#fff';
+          ctx.font = '40px Arial';
+          ctx.fillText('Welcome!', 150, 100);
+        }*/
+      
+      }
+
+      //Projector
+      /*
+      const uiCanvas_2 = document.createElement('canvas');
+      uiCanvas_2.width = 1600;
+      uiCanvas_2.height = 1200;
+      const ctx_2 = uiCanvas_2.getContext('2d', { alpha: false });
+      const uiTexture_2 = new THREE.CanvasTexture(uiCanvas_2);
+      uiTexture_2.encoding = THREE.sRGBEncoding;
+      uiTexture_2.needsUpdate = true;
+
+      function updateUI_Srceen_2() {
+        // ภาพ
+        const img = new Image();
+        img.src = "img/portfolio.png";
+
+        img.onload = function () {
+          // วาดรูปเมื่อโหลดเสร็จ
+          ctx_2.drawImage(img, 0, 0, 1600, 1200);
+
+          // อัปเดต texture ใน Three.js
+          uiTexture_2.needsUpdate = true;
+        };
+      
+      }
+      updateUI_Srceen_2()
+      // ===== Plane 3D สำหรับ GUI =====
+      const plane_2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6*3.6, 1.2*3.6),
+        new THREE.MeshBasicMaterial({ map: uiTexture_2, side: THREE.DoubleSide })
+      );
+      plane_2.position.set(-12.47, 4, 0);
+      plane_2.rotation.y = Math.PI / 2
+      scene.add(plane_2);*/
+      
+      // ====================== Projector ======================
+      const uiCanvas_2 = document.createElement('canvas');
+      uiCanvas_2.width = 1600;
+      uiCanvas_2.height = 1200;
+      const ctx_2 = uiCanvas_2.getContext('2d', { alpha: false });
+
+      const uiTexture_2 = new THREE.CanvasTexture(uiCanvas_2);
+      uiTexture_2.encoding = THREE.sRGBEncoding;
+      uiTexture_2.needsUpdate = true;
+
+      // ==== ภาพทั้งหมดใน projector ====
+      const imgList = [
+        "portfolio.png",
+        "portfolio1.png",
+        "portfolio2.png",
+      ];
+
+      let currentIndex = 0;
+      let burnProgress = 0;
+      let burning = false;
+
+      // ===== สร้าง plane สำหรับฉายภาพ =====
+      const plane_2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6 * 3.6, 1.2 * 3.6, 64, 64),
+        new THREE.MeshBasicMaterial({
+          map: uiTexture_2,
+          side: THREE.DoubleSide
+        })
+      );
+      plane_2.position.set(-12.47, 4, 0);
+      plane_2.rotation.y = Math.PI / 2;
+      scene.add(plane_2);
+
+      // ===== โหลดภาพครั้งแรก =====
+      function drawImageToCanvas(src) {
+        const img = new Image();
+        img.src = src;
+        img.onload = function () {
+          ctx_2.drawImage(img, 0, 0, 1600, 1200);
+          uiTexture_2.needsUpdate = true;
+        };
+      }
+      plane_2.visible = false;  
+      drawImageToCanvas(imgList[currentIndex]);
+
+      // ===== เอฟเฟกต์ไฟเผา (burn dissolve) =====
+      function burnTransition(nextIndex) {
+        if (burning) return;
+        burning = true;
+        burnProgress = 0;
+
+        const nextImg = new Image();
+        nextImg.src = imgList[nextIndex];
+
+        nextImg.onload = function () {
+          const burnInterval = setInterval(() => {
+            burnProgress += 0.05;
+
+            // ล้างพื้นหลัง
+            ctx_2.clearRect(0, 0, 1600, 1200);
+
+            // วาดภาพเดิม
+            ctx_2.globalAlpha = Math.max(0, 1 - burnProgress * 1.2);
+            ctx_2.drawImage(nextImg, 0, 0, 1600, 1200);
+
+            // เอฟเฟกต์ไฟเผา – noise + orange
+            //const gradient = ctx_2.createLinearGradient(0, 1200 * burnProgress, 1600, 1200);
+            //gradient.addColorStop(0, `rgba(255,${Math.floor(100 + 100 * Math.random())},0,${Math.random() * 0.4})`);
+            //gradient.addColorStop(1, `rgba(0,0,0,${Math.random() * 0.8})`);
+            ctx_2.fillStyle = gradient;
+            ctx_2.globalAlpha = 0.6;
+            ctx_2.fillRect(0, 0, 1600, 1200);
+
+            uiTexture_2.needsUpdate = true;
+
+            if (burnProgress >= 1.2) {
+              clearInterval(burnInterval);
+              currentIndex = nextIndex;
+              drawImageToCanvas(imgList[currentIndex]);
+              burning = false;
+            }
+          }, 50); // 20 fps
+        };
+      }
+
+      // ===== ควบคุมด้วยแป้นพิมพ์ =====
+      window.addEventListener("keydown", (e) => {
+        if (e.key.toLowerCase() === "y") {
+          let next = (currentIndex + 1) % imgList.length;
+          burnTransition(next);
+        }
+        if (e.key.toLowerCase() === "t") {
+          let prev = (currentIndex - 1 + imgList.length) % imgList.length;
+          burnTransition(prev);
+        }
+      });
+
+
+    
+      // Clickable objects
+      const objectMap = {};
+      let pickedObjPosition = new THREE.Vector3();
+      let cameraPosition = new THREE.Vector3();
+      let isCameraLocked = false; // ✅ กล้องอิสระเริ่มต้น
+      function addObj(mesh, pos, name) {
+          mesh.position.copy(pos);
+          mesh.name = name;
+          scene.add(mesh);
+          clickable.push(mesh);
+          // บันทึกไว้ใน objectMap เพื่อเรียกใช้ทีหลัง
+          if (name) objectMap[name] = mesh;
+          return mesh;
+          
+      }
+      const VIEWS = {
+        ScreenHisBox: { pos: new THREE.Vector3(1.45, 1.3, 0), tar: new THREE.Vector3(0, 1.08, 0) }
+      };
+      addObj(
+        new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 1), new THREE.MeshBasicMaterial({ color: 0xff6b6b })),
+        new THREE.Vector3(0.2, 3, 0),
+        'ScreenHisBox'
+      );
+
+      // clone โมเดลแบบแยก material
+      function cloneWithSeparateMaterials(source) {
+        const clone = source.clone(true);
+        clone.traverse((child) => {
+          if (child.isMesh) {
+            child.material = child.material.clone(); // 👈 แยก material ออกมา
+          }
+        });
+        return clone;
+      }
+
+
+      // Load model
+      let model; // ประกาศตัวแปรไว้ด้านนอก เพื่อให้ฟังก์ชันอื่นเข้าถึงได้
+      let model_screen_2;
+      let model_3D_me;
+      let model_Projector;
+      const loader = new THREE.GLTFLoader();
+      loader.load('Screen.glb', (gltf) => {
+        model = gltf.scene;
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+
+            if (child.material && 'metalness' in child.material) {
+              child.material.metalness = 0.2;
+              child.material.roughness = 0.0;
+            }
+            
+            child.material = new THREE.MeshPhongMaterial({
+              map: child.material.map,
+              color: child.material.color,
+              specular: 0x333333,
+              shininess: 30,
+            });
+          }
+        });
+        model.scale.set(0.5, 0.5, 0.5);
+        model.position.set(0, 0.45, 0);
+        scene.add(model);
+        const screen = model.getObjectByName('ScreenSurface');
+        if (screen) {
+          screen.material = new THREE.MeshBasicMaterial({ map: uiTexture });
+          clickable.push(screen);
+        }
+
+
+        model_screen_2 = cloneWithSeparateMaterials(model);
+        model_screen_2.position.set(-10, 0.5, 3);
+        scene.add(model_screen_2);
+        model_screen_2.visible = false;
+      });
+
+      
+
+      loader.load('me.glb', (gltf) => {
+        model_3D_me = gltf.scene;
+        model_3D_me.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+
+            if (child.material && 'metalness' in child.material) {
+              child.material.metalness = 0.7;
+              child.material.roughness = 0.6;
+
+              
+            }
+            
+            child.material = new THREE.MeshPhongMaterial({
+              map: child.material.map,
+              color: child.material.color,
+              specular: 0x333333,
+              shininess: 5,
+            });
+          }
+        });
+        model_3D_me.scale.set(3, 3, 3);
+        model_3D_me.position.set(-9.3, -0.27, 4.0);
+        scene.add(model_3D_me);
+        model_3D_me.visible = false; // ปิดก่อน
+      });
+
+      loader.load('projecter.glb', (gltf) => {
+        model_Projector = gltf.scene;
+        model_Projector.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+
+            if (child.material && 'metalness' in child.material) {
+              child.material.metalness = 0.2;
+              child.material.roughness = 0.0;
+            }
+            
+            child.material = new THREE.MeshPhongMaterial({
+              map: child.material.map,
+              color: child.material.color,
+              specular: 0x333333,
+              shininess: 30,
+            });
+          }
+        });
+        model_Projector.scale.set(1, 1, 1);
+        model_Projector.position.set(-12.5, 0, 0);
+        scene.add(model_Projector);
+        model_Projector.visible = false; // ปิดก่อน
+      });
+
+      // Raycaster
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+
+      function setPointer(e) {
+        const r = renderer.domElement.getBoundingClientRect();
+        const x = (e.clientX ?? e.touches[0].clientX) - r.left;
+        const y = (e.clientY ?? e.touches[0].clientY) - r.top;
+        pointer.x = (x / r.width) * 2 - 1;
+        pointer.y = -(y / r.height) * 2 + 1;
+      }
+    
+      function Animate_Screen_1_to_2(){
+        moveCameraTo(5,5,0, 0,3,0)
+        setTimeout(() => {vanishModel(model);}, 1200);
+        isCameraLocked = false;
+        hitScreen_st = false;
+        plane.visible = false
+        objectMap['ScreenHisBox'].visible = false
+        setTimeout(() => {
+          moveCameraTo(-3.5,3,0, -7,3,0)
+        }, 2000);
+        setTimeout(() => {
+        spotLight_y_setAni = 3.5;
+        spotLight_array['spotLight1'].position.set(-3, 8, 3);      // อยู่เหนือฉาก (y=8)
+        spotLight_array['spotLight1'].target.position.set(-10, 0, 3);
+        model_3D_me.visible = true;
+        model_screen_2.visible = true;
+
+        flickerLight(spotLight_array["spotLight1"]);
+        model_Projector.visible = true;
+        
+        setTimeout(() => {
+          spotLight_array["spotLight2"].visible = true;
+          plane_2.visible = true;
+          
+        }, 2000); // delay แต่ละตัว
+        
+        }, 3000); // delay แต่ละตัว
+      }
+
+    function onPick(e) {
+      setPointer(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects(clickable, false)[0];
+      if (!hit) return;
+
+      // ถ้าโดน Plane (GUI)
+      if (hit.object === plane) {
+        const uv = hit.uv;
+        const x = uv.x * uiCanvas.width;
+        const y = (1 - uv.y) * uiCanvas.height;
+
+        if (x >= button.x && x <= button.x + button.w &&
+            y >= button.y && y <= button.y + button.h) {
+              showWelcome = true;
+              Animate_Screen_1_to_2();
+        }
+      }
+      const view = VIEWS[hit.object.name];
+
+      if (!view) return;
+      // ✅ ล็อกกล้องตอนคลิก
+      hitScreen_st = true
+      cameraPosition.copy(view.pos);
+      pickedObjPosition.copy(view.tar);
+      isCameraLocked = true;
+    }
+
+    renderer.domElement.addEventListener('click', onPick);
+    renderer.domElement.addEventListener('touchend', onPick, { passive: true });
+
+    //หายไปแบบ หดตัว
+    function vanishModel(model, duration = 1) {
+      model.traverse((child) => {
+        if (child.isMesh) child.material.transparent = true;
+      });
+
+      const clock = new THREE.Clock();
+      const startTime = clock.getElapsedTime();
+
+      function animate() {
+        const elapsed = clock.getElapsedTime() - startTime;
+        const t = elapsed / duration;
+
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.material.opacity = Math.max(1 - t, 0);
+          }
+        });
+
+        const scale = Math.max(1 - t, 0);
+        model.scale.set(scale, scale, scale);
+
+        if (t < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          model.visible = false;
+        }
+      }
+
+      animate();
+    }
+
+    //หายไปแบบสะหลาย
+    function vanishSequential(models, duration = 1, delay = 0.2) {
+      models.forEach((model, index) => {
+        // เปิด transparency
+        model.traverse((child) => {
+          if (child.isMesh) child.material.transparent = true;
+        });
+
+        // เริ่ม animation แต่ละตัวเลื่อนเวลา
+        setTimeout(() => {
+          const clock = new THREE.Clock();
+          const startTime = clock.getElapsedTime();
+
+          function animate() {
+            const elapsed = clock.getElapsedTime() - startTime;
+            const t = elapsed / duration;
+
+            // Fade + scale
+            model.traverse((child) => {
+              if (child.isMesh) child.material.opacity = Math.max(1 - t, 0);
+            });
+            const scale = Math.max(1 - t, 0);
+            model.scale.set(scale, scale, scale);
+
+            if (t < 1) {
+              requestAnimationFrame(animate);
+            } else {
+              model.visible = false;
+            }
+          }
+
+          animate();
+        }, index * delay * 1000); // delay แต่ละตัว
+      });
+    }
+
+    let spotLight_y_setAni = 0
+
+    spotLight_array["spotLight2"].visible = false;
+
+    // ✅ ปุ่ม M เพื่อปลดล็อกกล้อง
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'm') {
+        isCameraLocked = false;
+        hitScreen_st = false;
+        activeView = null;
+        console.log('Camera unlocked');
+      }
+      /*
+      if (e.key.toLowerCase() === 'p') {
+        moveCameraTo(5,5,0, 0,3,0)
+        setTimeout(() => {vanishModel(model);}, 1200);
+        isCameraLocked = false;
+        hitScreen_st = false;
+        plane.visible = false
+        objectMap['ScreenHisBox'].visible = false
+        setTimeout(() => {
+          moveCameraTo(-3.5,3,0, -7,3,0)
+        }, 2000);
+        setTimeout(() => {
+        spotLight_y_setAni = 3.5;
+        spotLight_array['spotLight1'].position.set(-3, 8, 3);      // อยู่เหนือฉาก (y=8)
+        spotLight_array['spotLight1'].target.position.set(-10, 0, 3);
+        model_3D_me.visible = true;
+        model_screen_2.visible = true;
+
+        flickerLight(spotLight_array["spotLight1"]);
+        model_Projector.visible = true;
+        
+        setTimeout(() => {
+          spotLight_array["spotLight2"].visible = true;
+          plane_2.visible = true;
+          
+        }, 2000); // delay แต่ละตัว
+        
+        }, 3000); // delay แต่ละตัว
+      }*/
+    });
+    function moveObj(name, x, y, z) {
+      const obj = objectMap[name];
+      if (obj) obj.position.set(x, y, z);
+    }
+    // Animate
+    let t = 0;
+    let hitScreen_st = false;
+
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      updateUI_Srceen_1();
+      t += 0.01;
+      spotLight_array['spotLight1'].target.position.z = Math.sin(t)*2.0+spotLight_y_setAni;
+
+      //SetCamera
+      if(activeView){
+        camera.position.lerp(activeView.pos,0.05);
+        controls.target.lerp(activeView.tar,0.05);
+      }
+
+      if (!hitScreen_st){
+        model.position.y = (Math.sin(t)*0.1)+0.5;
+        plane.position.y = (Math.sin(t)*0.1)+1.23+0.065;
+        objectMap['ScreenHisBox'].position.y = (Math.sin(t)*0.1)+1.145;
+      }else{
+        model.position.y = 0.45
+        plane.position.y = 1.23
+        objectMap['ScreenHisBox'].position.y = 1.1;
+      }
+
+      //Hit
+      if (isCameraLocked) {
+        // กล้องถูกล็อก -> เคลื่อนไหวไปยังตำแหน่งที่เลือก
+        controls.target.lerp(pickedObjPosition, 0.05);
+        camera.position.lerp(cameraPosition, 0.05);
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
