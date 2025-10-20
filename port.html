@@ -644,7 +644,7 @@
             setTimeout(() => moveCameraTo(new THREE.Vector3(7, 5, 0), new THREE.Vector3(0, 3, 0)), 2000);
 
             setTimeout(() => {
-                spotLight1['spotLight1'].visible = true;
+                spotLights['spotLight1'].visible = true;
                 spotLights['spotLight1'].position.set(3, 8, 0);
                 spotLights['spotLight1'].target.position.set(0, 0, 0);
                 if (models.mainScreenModel) {
@@ -729,4 +729,5 @@
 </body>
 
 </html>
+
 
