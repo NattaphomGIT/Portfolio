@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Nattaphom Chombrisut</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #ui {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(20,20,20,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/EXRLoader.js"></script>
+
+    <script>
+        // =================================================================================
+        //                                 INITIALIZATION
+        // =================================================================================
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(7, 5, 0);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 3, 0);
+        controls.update();
+/*
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(5, 10, 0);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+*/
+        // =================================================================================
+        //                                     LIGHTS
+        // =================================================================================
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+        const spotLights = {};
+
+        function createSpotlight(name, position, targetPosition) {
+            const spotLight = new THREE.SpotLight(0xffffff, 2.5);
+            spotLight.position.copy(position);
+            spotLight.target.position.copy(targetPosition);
+            spotLight.angle = Math.PI / 8;
+            spotLight.penumbra = 0.4;
+            spotLight.decay = 2;
+            spotLight.distance = 30;
+            spotLight.castShadow = true;
+            spotLight.shadow.mapSize.width = 2048;
+            spotLight.shadow.mapSize.height = 2048;
+            spotLight.shadow.bias = -0.0001;
+            
+            scene.add(spotLight.target);
+            scene.add(spotLight);
+            spotLights[name] = spotLight;
+        }
+        
+
+        createSpotlight("spotLight1", new THREE.Vector3(3, 8, 0), new THREE.Vector3(0, 0, 0));
+        createSpotlight("spotLight2", new THREE.Vector3(-3, 8, 0), new THREE.Vector3(-12, 4, 0));
+        createSpotlight("spotLight3", new THREE.Vector3(2, 20, -14), new THREE.Vector3(-1, 0, -14));
+        spotLights["spotLight2"].visible = false;
+        spotLights["spotLight3"].visible = false;
+        spotLights["spotLight3"].decay = 1;
+
+        // =================================================================================
+        //                                 GROUND & TEXTURES
+        // =================================================================================
+        
+        function createGround() {
+            const textureLoader = new THREE.TextureLoader();
+            const textures = {
+                baseColor: textureLoader.load("Poliigon_TilesCeramicWhite_6956_BaseColor.jpg"),
+                displacement: textureLoader.load("Poliigon_TilesCeramicWhite_6956_Displacement.jpg"),
+                metallic: textureLoader.load("Poliigon_TilesCeramicWhite_6956_Metallic.jpg"),
+                normal: textureLoader.load("Poliigon_TilesCeramicWhite_6956_Normal.jpg"),
+                roughness: textureLoader.load("Poliigon_TilesCeramicWhite_6956_Roughness.jpg"),
+            };
+
+            for (const key in textures) {
+                textures[key].wrapS = textures[key].wrapT = THREE.RepeatWrapping;
+                textures[key].repeat.set(4, 4);
+            }
+
+            const groundMaterial = new THREE.MeshStandardMaterial({
+                map: textures.baseColor,
+                displacementMap: textures.displacement,
+                metalness: 1,
+                roughness: 0.5,
+                transparent: true,
+                opacity: 1.0,
+                transmission: 1,
+                ior: 1.5,
+                thickness: 1.2,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.06,
+                envMapIntensity: 1.4
+            });
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(50, 50, 100, 100), groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        createGround();
+
+        // =================================================================================
+        //                                      GUI
+        // =================================================================================
+
+        const clickableObjects = [];
+        const ScreenObjects = [];
+        
+        function createGUIScreen(uiCanvaWidth,uiCanvaHeight) {
+            const uiCanvas = document.createElement('canvas');
+            uiCanvas.width = uiCanvaWidth;
+            uiCanvas.height = uiCanvaHeight;
+            const ctx = uiCanvas.getContext('2d', { alpha: false });
+            const uiTexture = new THREE.CanvasTexture(uiCanvas);
+            uiTexture.encoding = THREE.sRGBEncoding;
+
+            const plane = new THREE.Mesh(
+                new THREE.PlaneGeometry(uiCanvaWidth*0.001, uiCanvaHeight*0.001),
+                new THREE.MeshBasicMaterial({ map: uiTexture, side: THREE.DoubleSide })
+            );
+
+            scene.add(plane);
+            clickableObjects.push(plane);
+
+            return { ctx, uiCanvas, plane, uiTexture };
+        }
+        function ButtonClick(ray,cObj,Screen,ScreenModel,button){
+            const intersects = ray.intersectObjects(cObj, true);
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                
+                if (hit.object === Screen.plane || (hit.object.parent && hit.object.parent.name === model)) {
+                    const uv = hit.uv;
+                    const x = uv.x * Screen.uiCanvas.width;
+                    const y = (1 - uv.y) * Screen.uiCanvas.height;
+                    
+                    if (x > button.x && x < button.x + button.w && y > button.y && y < button.y + button.h) {
+                        button.func;
+                    }
+                }
+
+                if (VIEWS[hit.object.name]) {
+                    hitScreen = true;
+                    isCameraLocked = true;
+                    activeView = VIEWS[hit.object.name];
+                }
+            }
+        }
+        function checkButtonClick(intersects,screenUi,buttonObj,func){
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                
+                if (hit.object === screenUi.plane || (hit.object.parent && hit.object.parent.name === buttonObj.ScreenModel)) {
+                    const uv = hit.uv;
+                    const x = uv.x * screenUi.uiCanvas.width;
+                    const y = (1 - uv.y) * screenUi.uiCanvas.height;
+                    
+                    if (x > buttonObj.x && x < buttonObj.x + buttonObj.w && y > buttonObj.y && y < buttonObj.y + buttonObj.h) {
+                        func();
+                    }
+                }
+
+                if (VIEWS[hit.object.name]) {
+                    hitScreen = true;
+                    isCameraLocked = true;
+                    activeView = VIEWS[hit.object.name];
+                }
+            }
+        }
+        
+
+        //[Start mainScreen { ]
+        const mainScreen = createGUIScreen(1250,725);
+        const mainScreen_button = { x: 150, y: 200, w: 230, h: 80, ScreenModel:"mainScreenModel"};
+        const mainScreen_button_work = {x: 150, y: 300, w: 230, h: 80 , ScreenModel:"mainScreenModel"}
+        mainScreen.plane.position.set(0.48, 1.23, 0);
+        mainScreen.plane.rotation.y = Math.PI / 2;
+        function mainScreenUI() {
+            mainScreen.ctx.fillStyle = '#00ad00';
+            mainScreen.ctx.fillRect(0, 0, mainScreen.uiCanvas.width, mainScreen.uiCanvas.height);
+            mainScreen.ctx.fillStyle = '#333';
+            mainScreen.ctx.fillRect(mainScreen_button.x, mainScreen_button.y, mainScreen_button.w, mainScreen_button.h);
+            mainScreen.ctx.strokeStyle = '#0f0';
+            mainScreen.ctx.lineWidth = 4;
+            mainScreen.ctx.strokeRect(mainScreen_button.x, mainScreen_button.y, mainScreen_button.w, mainScreen_button.h);
+            mainScreen.ctx.fillStyle = '#0f0';
+            mainScreen.ctx.font = '30px Arial';
+            mainScreen.ctx.fillText('About ME :)', mainScreen_button.x + 40, mainScreen_button.y + 50);
+
+            mainScreen.ctx.fillStyle = '#333';
+            mainScreen.ctx.fillRect(mainScreen_button_work.x, mainScreen_button_work.y, mainScreen_button_work.w, mainScreen_button_work.h);
+            mainScreen.ctx.strokeStyle = '#0f0';
+            mainScreen.ctx.lineWidth = 4;
+            mainScreen.ctx.strokeRect(mainScreen_button_work.x, mainScreen_button_work.y, mainScreen_button_work.w, mainScreen_button_work.h);
+            mainScreen.ctx.fillStyle = '#0f0';
+            mainScreen.ctx.font = '30px Arial';
+            mainScreen.ctx.fillText('Work ...', mainScreen_button_work.x + 40, mainScreen_button_work.y + 50);
+            mainScreen.uiTexture.needsUpdate = true;
+        }
+        
+        //[End mainScreen } ]
+
+        //[Start secondScreen { ]
+        
+        const secondScreen = createGUIScreen(1250,725);
+        const secondScreen_button = { x: 350, y: 200, w: 500, h: 300 ,ScreenModel:"screen2Model"};
+        secondScreen.plane.position.set(-9.52, 1.279, 3);
+        secondScreen.plane.rotation.y = Math.PI / 2;
+        secondScreen.plane.visible = false;
+        function secondScreenUI() {
+            
+            secondScreen.ctx.fillStyle = '#00ad00';
+            secondScreen.ctx.fillRect(0, 0, secondScreen.uiCanvas.width, secondScreen.uiCanvas.height);
+            secondScreen.ctx.fillStyle = '#333';
+            secondScreen.ctx.fillRect(secondScreen_button.x, secondScreen_button.y, secondScreen_button.w, secondScreen_button.h);
+            secondScreen.ctx.strokeStyle = '#0f0';
+            secondScreen.ctx.lineWidth = 4;
+            secondScreen.ctx.strokeRect(secondScreen_button.x, secondScreen_button.y, secondScreen_button.w, secondScreen_button.h);
+            secondScreen.ctx.fillStyle = '#0f0';
+            secondScreen.ctx.font = '120px Arial';
+            secondScreen.ctx.fillText('../ Back', secondScreen_button.x + 50, secondScreen_button.y + 190);
+            secondScreen.uiTexture.needsUpdate = true;
+        }
+        
+        //[End secondScreen } ]
+        const threeScreen = createGUIScreen(1250,725);
+        const threeScreen_button = { x: 350, y: 200, w: 500, h: 300 ,ScreenModel:"screen2Model"};
+        threeScreen.plane.position.set(-2.52, 1.279, -12);
+        threeScreen.plane.rotation.y = Math.PI / 2;
+        threeScreen.plane.visible = false;
+
+        function threeScreenUI() {
+            
+            threeScreen.ctx.fillStyle = '#00ad00';
+            threeScreen.ctx.fillRect(0, 0, threeScreen.uiCanvas.width, threeScreen.uiCanvas.height);
+            threeScreen.ctx.fillStyle = '#333';
+            threeScreen.ctx.fillRect(threeScreen_button.x, threeScreen_button.y, threeScreen_button.w, threeScreen_button.h);
+            threeScreen.ctx.strokeStyle = '#0f0';
+            threeScreen.ctx.lineWidth = 4;
+            threeScreen.ctx.strokeRect(threeScreen_button.x, threeScreen_button.y, threeScreen_button.w, threeScreen_button.h);
+            threeScreen.ctx.fillStyle = '#0f0';
+            threeScreen.ctx.font = '120px Arial';
+            threeScreen.ctx.fillText('../ Back', threeScreen_button.x + 50, threeScreen_button.y + 190);
+            threeScreen.uiTexture.needsUpdate = true;
+        }
+
+        
+        function updateScreenUI(){
+            mainScreenUI();
+            secondScreenUI();
+            threeScreenUI();
+        }
+
+        // =================================================================================
+        //                                  PROJECTOR
+        // =================================================================================
+
+        const projector = {
+            canvas: document.createElement('canvas'),
+            currentIndex: 0,
+            burning: false,
+            burnProgress: 0,
+            imageList: ["portfolio.png", "portfolio1.png", "portfolio2.png"]
+        };
+
+        projector.canvas.width = 1600;
+        projector.canvas.height = 1200;
+        projector.ctx = projector.canvas.getContext('2d', { alpha: false });
+        projector.texture = new THREE.CanvasTexture(projector.canvas);
+        projector.texture.encoding = THREE.sRGBEncoding;
+
+        const projectorScreen = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.6 * 3.6, 1.2 * 3.6, 64, 64),
+            new THREE.MeshBasicMaterial({ map: projector.texture, side: THREE.DoubleSide })
+        );
+        projectorScreen.position.set(-12.47, 4, 0);
+        projectorScreen.rotation.y = Math.PI / 2;
+        projectorScreen.visible = false;
+        scene.add(projectorScreen);
+        
+        function drawProjectorImage(src) {
+            const img = new Image();
+            img.src = src;
+            img.onload = () => {
+                projector.ctx.drawImage(img, 0, 0, 1600, 1200);
+                projector.texture.needsUpdate = true;
+            };
+        }
+        
+        drawProjectorImage(projector.imageList[projector.currentIndex]);
+        
+        // =================================================================================
+        //                                     MODELS
+        // =================================================================================
+
+        const models = {};
+        const gltfLoader = new THREE.GLTFLoader();
+
+        function cloneWithSeparateMaterials(source) {
+            const clone = source.clone(true);
+            clone.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = child.material.clone();
+                }
+            });
+            return clone;
+        }
+
+        function loadModel(url, name, options, callback) {
+            gltfLoader.load(url, (gltf) => {
+                models[name] = gltf.scene;
+                models[name].traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.material = new THREE.MeshPhongMaterial({
+                            map: child.material.map,
+                            color: child.material.color,
+                            specular: options.specular || 0x111111,
+                            shininess: options.shininess || 30,
+                        });
+                    }
+                });
+                models[name].scale.set(options.scale, options.scale, options.scale);
+                models[name].position.copy(options.position);
+                models[name].visible = options.visible !== undefined ? options.visible : true;
+                scene.add(models[name]);
+
+                if (callback) callback(models[name]);
+            });
+        }
+        
+        loadModel('Screen.glb', 'mainScreenModel', {
+            scale: 0.5,
+            position: new THREE.Vector3(0, 0.45, 0),
+            specular: 0x333333,
+            shininess: 30
+        }, (model) => {
+            const screenSurface = model.getObjectByName('ScreenSurface');
+            if (screenSurface) {
+                screenSurface.material = new THREE.MeshBasicMaterial({ map: mainScreen.uiTexture });
+                clickableObjects.push(screenSurface);
+            }
+            // Create a clone for the second screen with separate materials
+            models.screen2Model = cloneWithSeparateMaterials(model); // <-- FIXED HERE
+            models.screen2Model.position.set(-10, 0.5, 3);
+            models.screen2Model.visible = false;
+
+            models.screen3Model = cloneWithSeparateMaterials(model); // <-- FIXED HERE
+            models.screen3Model.position.set(-3, 0.5, -12);
+            models.screen3Model.visible = false;
+            scene.add(models.screen2Model);
+            scene.add(models.screen3Model);
+        });
+        
+
+        function loadModelOn(url, name, options, callback) {
+            gltfLoader.load(url, (gltf) => {
+                models[name] = gltf.scene;
+
+                models[name].traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                
+                // ✨ --- ส่วนที่เพิ่มเข้ามา: ตรวจสอบและเล่น Animation --- ✨
+                if (gltf.animations && gltf.animations.length) {
+                    // 1. สร้าง AnimationMixer สำหรับโมเดลนี้
+                    mixer = new THREE.AnimationMixer(models[name]);
+                    // 2. เลือก Animation ที่ต้องการ (ในที่นี้คืออันแรก)
+                    const action = mixer.clipAction(gltf.animations[0]);
+                    // 3. สั่งให้เล่น
+                    action.play();
+                }
+
+                models[name].scale.set(options.scale, options.scale, options.scale);
+                models[name].position.copy(options.position);
+                models[name].visible = options.visible !== undefined ? options.visible : true;
+                scene.add(models[name]);
+
+                if (callback) callback(models[name]);
+            }, undefined, function (error) {
+                console.error(`An error happened while loading ${name}:`, error);
+            });
+        }
+
+        loadModel('me.glb', 'meModel', {
+            scale: 3,
+            position: new THREE.Vector3(-9.3, -0.27, 4.0),
+            specular: 0x333333,
+            shininess: 5,
+            visible: false
+        });
+
+        loadModel('projecter.glb', 'projectorModel', {
+            scale: 1,
+            position: new THREE.Vector3(-12.5, 0, 0),
+            specular: 0x333333,
+            shininess: 30,
+            visible: false
+        });
+
+        loadModelOn('scene.gltf', 'myNewCar', {
+            scale: 0.5, 
+            position: new THREE.Vector3(0, 0.3, -14),
+            specular: 0x333333,
+            shininess: 70,
+            visible: false
+        });
+
+
+
+
+        // =================================================================================
+        //                                  INTERACTIONS
+        // =================================================================================
+        
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let isCameraLocked = false;
+        let activeView = null;
+        let hitScreen = false;
+
+        const VIEWS = {
+            ScreenHisBox: { pos: new THREE.Vector3(1.45, 1.3, 0), tar: new THREE.Vector3(0, 1.08, 0) }
+        };
+
+        const screenHitBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 1), new THREE.MeshBasicMaterial({ color: 0xff6b6b, visible: false }));
+        screenHitBox.position.set(0.2, 3, 0);
+        screenHitBox.name = 'ScreenHisBox';
+        scene.add(screenHitBox);
+        clickableObjects.push(screenHitBox);
+
+        function onPointerClick(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(clickableObjects, true);
+            
+            checkButtonClick(intersects,mainScreen,mainScreen_button,animateMainScreenTransition);
+            checkButtonClick(intersects,mainScreen,mainScreen_button_work,animateThreeTransition);
+            checkButtonClick(intersects,secondScreen,secondScreen_button,animateToMainScene)
+            checkButtonClick(intersects,threeScreen,threeScreen_button,animateToMainScene)
+            
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                if (VIEWS[hit.object.name]) {
+                    hitScreen = true;
+                    isCameraLocked = true;
+                    activeView = VIEWS[hit.object.name];
+                }
+            }
+        }
+
+        renderer.domElement.addEventListener('click', onPointerClick);
+        
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'm') {
+                isCameraLocked = false;
+                hitScreen = false;
+                activeView = null;
+            } else if (key === 'y') {
+                const next = (projector.currentIndex + 1) % projector.imageList.length;
+                projector.currentIndex = next;
+                drawProjectorImage(projector.imageList[next]);
+            } else if (key === 't') {
+                const prev = (projector.currentIndex - 1 + projector.imageList.length) % projector.imageList.length;
+                projector.currentIndex = prev;
+                drawProjectorImage(projector.imageList[prev]);
+            }
+        });
+        
+        // =================================================================================
+        //                                  ANIMATIONS
+        // =================================================================================
+
+        function moveCameraTo(pos, tar) {
+            activeView = { pos, tar };
+        }
+
+        function vanishModel(model, duration = 1) {
+            const clock = new THREE.Clock();
+            const startTime = clock.getElapsedTime();
+            model.traverse(child => { if (child.isMesh) child.material.transparent = true; });
+
+            function animateVanish() {
+                const elapsed = clock.getElapsedTime() - startTime;
+                const t = Math.min(elapsed / duration, 1);
+                const scale = 1 - t;
+                
+                // Ensure scale doesn't go negative
+                const effectiveScale = Math.max(0, scale);
+                model.scale.set(effectiveScale, effectiveScale, effectiveScale);
+
+                model.traverse(child => { if (child.isMesh) child.material.opacity = 1 - t; });
+
+                if (t < 1) {
+                    requestAnimationFrame(animateVanish);
+                } else {
+                    model.visible = false;
+                }
+            }
+            animateVanish();
+        }
+
+        function reviveModel(model, duration = 1) {
+            model.visible = true;
+            const originalScale = model.userData.originalScale || new THREE.Vector3(0.5, 0.5, 0.5);
+            const clock = new THREE.Clock();
+            model.traverse(child => { if (child.isMesh) child.material.transparent = true; });
+
+            function animateRevive() {
+                const t = Math.min(clock.getElapsedTime() / duration, 1);
+                model.scale.set(originalScale.x * t, originalScale.y * t, originalScale.z * t);
+                model.traverse(child => { if (child.isMesh) child.material.opacity = t; });
+                if (t < 1) {
+                    requestAnimationFrame(animateRevive);
+                }
+            }
+
+            animateRevive();
+            
+        }
+
+        function flickerLight(light, duration = 1) {
+            const startTime = performance.now();
+            function animateFlicker(time) {
+                const elapsed = (time - startTime) / 1000;
+                if (elapsed < duration) {
+                    light.intensity = (Math.random() > 0.5 ? 2.5 : 0.2) * (1 - elapsed / duration) + 2.5 * (elapsed / duration);
+                    requestAnimationFrame(animateFlicker);
+                } else {
+                    light.intensity = 3.5;
+                }
+            }
+            requestAnimationFrame(animateFlicker);
+        }
+
+        function animateMainScreenTransition() {
+            moveCameraTo(new THREE.Vector3(5, 5, 0), new THREE.Vector3(0, 3, 0));
+            if (models.mainScreenModel) {
+                 setTimeout(() => vanishModel(models.mainScreenModel), 1200);
+            }
+            
+            isCameraLocked = false;
+            hitScreen = false;
+            mainScreen.plane.visible = false;
+            screenHitBox.visible = false;
+
+            setTimeout(() => moveCameraTo(new THREE.Vector3(-3.5, 3, 0), new THREE.Vector3(-7, 3, 0)), 2000);
+
+            setTimeout(() => {
+                spotLights['spotLight1'].position.set(-3, 8, 3);
+                spotLights['spotLight1'].target.position.set(-10, 0, 3);
+                SecondSceneObject(true)
+                flickerLight(spotLights["spotLight1"]);
+
+                setTimeout(() => {
+                    spotLights["spotLight2"].visible = true;
+                    projectorScreen.visible = true;
+                }, 2000);
+            }, 3000);
+        }
+        function animateThreeTransition() {
+            
+            moveCameraTo(new THREE.Vector3(5, 5, 0), new THREE.Vector3(0, 3, 0));
+            if (models.mainScreenModel) {
+                 setTimeout(() => vanishModel(models.mainScreenModel), 1200);
+            }
+
+            mainScreen.plane.visible = false;
+            screenHitBox.visible = false;
+
+            setTimeout(() => moveCameraTo(new THREE.Vector3(5, 3, -14), new THREE.Vector3(0, 2, -14)), 2000);
+            ThreeSceneObject(true);
+            setTimeout(() => {
+                spotLights['spotLight3'].visible = true
+                flickerLight( spotLights['spotLight3'])
+                spotLights['spotLight1'].visible = false;
+
+                setTimeout(() => {
+                    isCameraLocked = false;
+                }, 2000);
+            }, 3000);
+        }
+
+
+        function SecondSceneObject(vb){
+            if(models.screen2Model) models.screen2Model.visible = vb;
+            if(models.meModel) models.meModel.visible = vb;
+            if(models.projectorModel) models.projectorModel.visible = vb;
+            if(projectorScreen) projectorScreen.visible = vb;
+            if(secondScreen.plane) secondScreen.plane.visible = vb;
+        }
+        function ThreeSceneObject(vb){
+            if(models['myNewCar']) models['myNewCar'].visible = vb;
+            if(models.screen3Model) models.screen3Model.visible = vb;
+            if(threeScreen.plane) threeScreen.plane.visible = vb;
+            
+        }
+
+        function animateToMainScene() {
+            moveCameraTo(new THREE.Vector3(5, 5, 0), new THREE.Vector3(0, 3, 0));
+            setTimeout(() => {
+                SecondSceneObject(false)
+                ThreeSceneObject(false)
+                if(spotLights["spotLight3"].visible = true) spotLights["spotLight3"].visible= false;
+                if(spotLights["spotLight2"].visible = true)spotLights["spotLight2"].visible = false;
+            }, 2000);
+            flickerLight(spotLights["spotLight3"])
+            flickerLight(spotLights["spotLight1"]);
+            
+            setTimeout(() => moveCameraTo(new THREE.Vector3(7, 5, 0), new THREE.Vector3(0, 3, 0)), 2000);
+
+            setTimeout(() => {
+                spotLights['spotLight1'].position.set(3, 8, 0);
+                spotLights['spotLight1'].target.position.set(0, 0, 0);
+                if (models.mainScreenModel) {
+                    reviveModel(models.mainScreenModel);
+                    hitScreen = true
+                    activeView = VIEWS.ScreenHisBox
+                    setTimeout(() =>
+                    mainScreen.plane.visible = true,
+                    1300);
+                }
+                
+            }, 2000);
+        }
+        
+        // =================================================================================
+        //                                 RENDER LOOP
+        // =================================================================================
+
+        let time = 0;
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+            const delta = clock.getDelta();
+            if (mixer) {
+                mixer.update(delta); // สั่งให้ mixer อัปเดต Animation
+            }
+            if(models['myNewCar']){
+                const time = clock.getElapsedTime();
+                models['myNewCar'].position.y =  0.23 + Math.sin(time)* 0.1;
+                models['myNewCar'].position.z =  Math.sin(time)* 0.5 -14;
+                models['myNewCar'].rotation.y =  Math.sin(time)* 0.1
+                models['myNewCar'].rotation.x =  Math.sin(time)* 0.005
+            }
+            updateScreenUI();
+            if (spotLights['spotLight3']) {
+                const time = clock.getElapsedTime();
+                spotLights['spotLight3'].target.position.z = Math.sin(time) * 2.0 -14;
+            }
+
+            if (spotLights['spotLight1']) {
+                
+                if(spotLights['spotLight2'].visible == true)spotLights['spotLight1'].target.position.z = Math.sin(time) * 2.0 +3;else{
+                    spotLights['spotLight1'].target.position.z = Math.sin(time) * 2.0;
+                }
+            }
+            
+            if (activeView) {
+                camera.position.lerp(activeView.pos, 0.05);
+                controls.target.lerp(activeView.tar, 0.05);
+            }
+
+            if (!hitScreen) {
+                const yOffset = Math.sin(time) * 0.1;
+                if(models.mainScreenModel) models.mainScreenModel.position.y = 0.5 + yOffset;
+                mainScreen.plane.position.y = 1.23 + 0.065 + yOffset;
+                screenHitBox.position.y = 1.145 + yOffset;
+            } else {
+                if(models.mainScreenModel) models.mainScreenModel.position.y = 0.45;
+                mainScreen.plane.position.y = 1.23;
+                screenHitBox.position.y = 1.1;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // =================================================================================
+        //                                 EVENT LISTENERS
+        // =================================================================================
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
